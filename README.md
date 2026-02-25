@@ -1,7 +1,7 @@
-# 🌍 EcoSage — Haystack RAG Sustainability Chatbot
+# 🌍 EcoSage : Haystack RAG Sustainability Chatbot
 
 A fully open-source, retrieval-augmented generation (RAG) chatbot for sustainability education.
-Ask questions about eco-living, climate change, circular economy, and more — and get answers
+Ask questions about eco-living, climate change, circular economy, and more : and get answers
 grounded in a curated knowledge base.
 
 ---
@@ -26,7 +26,7 @@ User Question
 │  4. PromptBuilder  →  inject context into template  │
 │                                                     │
 │  5. Claude API  →  generate grounded answer         │
-│     (claude-3-5-haiku — fastest & cheapest)         │
+│     (claude-3-5-haiku : fastest & cheapest)         │
 └─────────────────────────────────────────────────────┘
      │
      ▼
@@ -84,19 +84,19 @@ uvicorn app:app --reload --port 8000
 
 On first start, you'll see:
 ```
-🌱 EcoSage starting up — initialising Haystack RAG pipeline...
+🌱 EcoSage starting up : initialising Haystack RAG pipeline...
 📚 Indexing 15 sustainability documents...
 ✅ EcoSage ready! 15 documents indexed.
 ```
 
 ### 3. Use the Frontend
 
-**Option A — Claude.ai Artifact** (easiest):
+**Option A : Claude.ai Artifact** (easiest):
 - Open `frontend/EcoSage_v2.jsx` in Claude.ai as an artifact
 - It auto-connects to your running backend on `localhost:8000`
 - Falls back to direct Claude API if backend is offline
 
-**Option B — React App**:
+**Option B : React App**:
 ```bash
 cd frontend
 npx create-react-app ecosage-ui
