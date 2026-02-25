@@ -1,23 +1,5 @@
-# EcoSage RAG Backend — Python Dependencies
-# All free and open source | Python 3.13 compatible ✅
-
-# ── Web framework ──────────────────────────────────────────────
-fastapi>=0.115.0           # Dropped Python 3.8, supports 3.13 natively
-uvicorn[standard]>=0.34.0  # ASGI server with websockets + http tools
-
-# ── Haystack 2.x core ─────────────────────────────────────────
-haystack-ai>=2.24.1        # Latest stable, explicitly supports Python 3.13
-
-# ── Embeddings (runs locally, no API key needed) ──────────────
-sentence-transformers>=5.2.3  # Latest stable, Python >=3.10, major v5 rewrite
-torch>=2.6.0               # CPU-only install (much smaller, ~200MB):
-                           # pip install torch --index-url https://download.pytorch.org/whl/cpu
-
-# ── HTTP requests (for Claude API call) ───────────────────────
-requests>=2.32.3
-
-# ── Config management ─────────────────────────────────────────
+fastapi>=0.115.0
+uvicorn[standard]>=0.34.0
+google-genai>=1.0.0
 python-dotenv>=1.1.0
-
-# ── Data validation ───────────────────────────────────────────
 pydantic>=2.11.0

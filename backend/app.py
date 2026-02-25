@@ -1,16 +1,5 @@
 """
-EcoSage RAG Backend — 100% FREE, No API Key Required 🌍
-Uses Ollama for both embeddings AND text generation (all local).
-
-Stack: FastAPI + Haystack 2.x + Ollama (nomic-embed-text + llama3.2)
-Python 3.13 compatible ✅
-
-SETUP:
-  1. Install Ollama from https://ollama.com
-  2. Pull the required models:
-       ollama pull llama3.2          # ~2GB  - the chat LLM
-       ollama pull nomic-embed-text  # ~274MB - the embedding model
-  3. Run: uvicorn app:app --reload --port 8000
+EcoSage RAG Backend — Powered by Gemini API (google-genai SDK)
 """
 
 import os
@@ -18,67 +7,47 @@ import logging
 from contextlib import asynccontextmanager
 from typing import Optional
 
+from google import genai
+from google.genai import types
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from haystack import Pipeline, Document
-from haystack.document_stores.in_memory import InMemoryDocumentStore
-from haystack.components.retrievers.in_memory import InMemoryEmbeddingRetriever
-from haystack.components.builders import PromptBuilder
-from haystack.components.writers import DocumentWriter
-
-from haystack_integrations.components.embedders.ollama import (
-    OllamaDocumentEmbedder,
-    OllamaTextEmbedder,
-)
-from haystack_integrations.components.generators.ollama import OllamaGenerator
-
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("ecosage")
 
-# ─── Configuration ───────────────────────────────────────────────────────────
-OLLAMA_URL   = os.getenv("OLLAMA_URL",    "http://localhost:11434")
-LLM_MODEL    = os.getenv("LLM_MODEL",    "llama3.2")          # chat model
-EMBED_MODEL  = os.getenv("EMBED_MODEL",  "nomic-embed-text")  # embedding model
-TOP_K_DOCS   = int(os.getenv("TOP_K_DOCS", "3"))
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+LLM_MODEL      = os.getenv("LLM_MODEL", "gemini-2.0-flash")
+TOP_K_DOCS     = int(os.getenv("TOP_K_DOCS", "3"))
 
-# ─── RAG Prompt ──────────────────────────────────────────────────────────────
-RAG_PROMPT = """You are EcoSage, a warm and knowledgeable sustainability advisor.
+SYSTEM_PROMPT = """You are EcoSage, a warm and knowledgeable sustainability advisor.
 Your role is to help people live more eco-friendly lives and understand environmental issues.
 Only discuss topics related to environment, sustainability, ecology, climate, and resources.
 If asked about unrelated topics, gently redirect back to sustainability.
-
-Use the knowledge base passages below to ground your answer with specific facts.
-
-Retrieved Knowledge:
-{% for doc in documents %}
---- [{{ doc.meta.title }}] ---
-{{ doc.content }}
-{% endfor %}
-
-Conversation so far:
-{% for msg in history %}
-{{ msg.role | upper }}: {{ msg.content }}
-{% endfor %}
-
-USER: {{ question }}
-
 Respond warmly and practically. Give concrete, actionable advice.
 Keep it concise (3-6 sentences or a short list).
-End with one small action the person can take TODAY.
+End with one small action the person can take TODAY."""
 
-ECOSAGE:"""
-
-# ─── Global state ────────────────────────────────────────────────────────────
-document_store:    Optional[InMemoryDocumentStore] = None
-retrieval_pipeline: Optional[Pipeline]             = None
-indexing_pipeline:  Optional[Pipeline]             = None
+knowledge_docs: list[dict] = []
+gemini_client = None
 
 
-# ─── Request / Response models ───────────────────────────────────────────────
+def retrieve_docs(query: str, top_k: int = TOP_K_DOCS) -> list[dict]:
+    query_words = set(query.lower().split())
+    stop_words  = {"how", "can", "i", "the", "a", "an", "is", "to", "do", "what", "my", "me"}
+    query_words -= stop_words
+    scored = []
+    for doc in knowledge_docs:
+        text  = (doc["title"] + " " + doc["content"]).lower()
+        score = sum(1 for w in query_words if w in text)
+        if score > 0:
+            scored.append((score, doc))
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [doc for _, doc in scored[:top_k]]
+
+
 class ChatMessage(BaseModel):
     role: str
     content: str
@@ -93,75 +62,24 @@ class ChatResponse(BaseModel):
     model: str
 
 
-# ─── Pipeline builders ───────────────────────────────────────────────────────
-def build_indexing_pipeline(store: InMemoryDocumentStore) -> Pipeline:
-    """Embed documents locally with Ollama nomic-embed-text and write to store."""
-    embedder = OllamaDocumentEmbedder(model=EMBED_MODEL, url=OLLAMA_URL)
-    pipe = Pipeline()
-    pipe.add_component("embedder", embedder)
-    pipe.add_component("writer", DocumentWriter(document_store=store))
-    pipe.connect("embedder.documents", "writer.documents")
-    return pipe
-
-
-def build_retrieval_pipeline(store: InMemoryDocumentStore) -> Pipeline:
-    """Embed query → retrieve top-k → build prompt → generate with Ollama LLM."""
-    text_embedder = OllamaTextEmbedder(model=EMBED_MODEL, url=OLLAMA_URL)
-    retriever     = InMemoryEmbeddingRetriever(document_store=store, top_k=TOP_K_DOCS)
-    prompt_builder = PromptBuilder(template=RAG_PROMPT)
-    llm = OllamaGenerator(
-        model=LLM_MODEL,
-        url=OLLAMA_URL,
-        timeout=300,
-        generation_kwargs={"temperature": 0.7, "num_predict": 300},
-    )
-
-    pipe = Pipeline()
-    pipe.add_component("text_embedder",  text_embedder)
-    pipe.add_component("retriever",      retriever)
-    pipe.add_component("prompt_builder", prompt_builder)
-    pipe.add_component("llm",            llm)
-
-    pipe.connect("text_embedder.embedding",  "retriever.query_embedding")
-    pipe.connect("retriever.documents",      "prompt_builder.documents")
-    pipe.connect("prompt_builder.prompt",    "llm.prompt")
-    return pipe
-
-
-# ─── Lifespan (startup / shutdown) ───────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global document_store, retrieval_pipeline, indexing_pipeline
+    global knowledge_docs, gemini_client
+
+    if not GEMINI_API_KEY:
+        raise RuntimeError("GEMINI_API_KEY is not set in your .env file!")
+
+    gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 
     from knowledge_base import SUSTAINABILITY_DOCS
+    knowledge_docs = SUSTAINABILITY_DOCS
+    logger.info(f"✅ Loaded {len(knowledge_docs)} docs. Model: {LLM_MODEL}")
 
-    logger.info("🌱 EcoSage starting — building Haystack + Ollama RAG pipeline...")
-    document_store = InMemoryDocumentStore(embedding_similarity_function="cosine")
-
-    haystack_docs = [
-        Document(
-            id=doc["id"],
-            content=doc["content"].strip(),
-            meta={"title": doc["title"], "category": doc["category"]},
-        )
-        for doc in SUSTAINABILITY_DOCS
-    ]
-
-    logger.info(f"📚 Indexing {len(haystack_docs)} sustainability documents via Ollama embedder...")
-    indexing_pipeline = build_indexing_pipeline(document_store)
-    indexing_pipeline.run({"embedder": {"documents": haystack_docs}})
-
-    retrieval_pipeline = build_retrieval_pipeline(document_store)
-
-    logger.info(f"✅ Ready! {document_store.count_documents()} docs indexed. LLM: {LLM_MODEL}")
-
-    yield  # ← app runs
-
+    yield
     logger.info("🌿 EcoSage shutting down.")
 
 
-# ─── App ─────────────────────────────────────────────────────────────────────
-app = FastAPI(title="EcoSage RAG API — Ollama Edition", version="3.0.0", lifespan=lifespan)
+app = FastAPI(title="EcoSage API — Gemini Edition", version="5.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -172,73 +90,63 @@ app.add_middleware(
 )
 
 
-# ─── Routes ──────────────────────────────────────────────────────────────────
 @app.get("/")
 async def root():
-    return {
-        "name": "EcoSage RAG API",
-        "version": "3.0.0",
-        "llm": LLM_MODEL,
-        "embedder": EMBED_MODEL,
-        "documents": document_store.count_documents() if document_store else 0,
-        "api_key_required": False,
-        "status": "ready",
-    }
-
+    return {"name": "EcoSage API", "version": "5.0.0", "model": LLM_MODEL, "documents": len(knowledge_docs), "status": "ready"}
 
 @app.get("/health")
 async def health():
-    return {
-        "status": "ok",
-        "llm_model": LLM_MODEL,
-        "embed_model": EMBED_MODEL,
-        "documents_indexed": document_store.count_documents() if document_store else 0,
-    }
+    return {"status": "ok", "model": LLM_MODEL, "documents_indexed": len(knowledge_docs)}
 
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
-    """
-    Full RAG pipeline:
-      query → Ollama embed → retrieve docs → build prompt → Ollama LLM → response
-    """
-    if not retrieval_pipeline:
-        raise HTTPException(status_code=503, detail="Pipeline not initialised yet")
+    if not gemini_client:
+        raise HTTPException(status_code=503, detail="Gemini client not initialised")
 
     question = request.message.strip()
     if not question:
         raise HTTPException(status_code=400, detail="Message cannot be empty")
 
-    logger.info(f"🔍 Query: {question[:80]}...")
+    logger.info(f"🔍 Query: {question[:80]}")
+
+    retrieved = retrieve_docs(question)
+
+    context = ""
+    if retrieved:
+        context = "\n\n".join(
+            f"[{doc['title']}]\n{doc['content'].strip()}" for doc in retrieved
+        )
+        context = f"Relevant knowledge base context:\n{context}\n\n"
+
+    # Build history for Gemini
+    history = []
+    for msg in request.history[-6:]:
+        role = "user" if msg.role == "user" else "model"
+        history.append(types.Content(role=role, parts=[types.Part(text=msg.content)]))
+
+    user_content = f"{context}User question: {question}"
 
     try:
-        result = retrieval_pipeline.run(
-            {
-                "text_embedder":  {"text": question},
-                "prompt_builder": {
-                    "question": question,
-                    "history":  [m.model_dump() for m in request.history[-6:]],
-                },
-            }
+        response = gemini_client.models.generate_content(
+            model=LLM_MODEL,
+            contents=history + [types.Content(role="user", parts=[types.Part(text=user_content)])],
+            config=types.GenerateContentConfig(
+                system_instruction=SYSTEM_PROMPT,
+                max_output_tokens=512,
+                temperature=0.7,
+            ),
         )
+        answer = response.text
     except Exception as e:
-        logger.error(f"❌ Pipeline error: {e}")
-        raise HTTPException(status_code=500, detail=f"Pipeline error: {str(e)}")
+        logger.error(f"❌ Gemini API error: {e}")
+        raise HTTPException(status_code=502, detail=f"Gemini API error: {str(e)}")
 
-    retrieved_docs = result["retriever"]["documents"]
-    answer         = result["llm"]["replies"][0]
-
-    logger.info(f"✅ Answered using: {[d.meta['title'] for d in retrieved_docs]}")
+    logger.info(f"✅ Answered. Sources: {[d['title'] for d in retrieved]}")
 
     sources = [
-        {
-            "id":       doc.id,
-            "title":    doc.meta["title"],
-            "category": doc.meta["category"],
-            "score":    round(doc.score, 3) if doc.score else None,
-            "snippet":  doc.content[:200] + "...",
-        }
-        for doc in retrieved_docs
+        {"id": doc["id"], "title": doc["title"], "category": doc["category"], "score": None, "snippet": doc["content"][:200] + "..."}
+        for doc in retrieved
     ]
 
     return ChatResponse(answer=answer, retrieved_docs=sources, model=LLM_MODEL)
@@ -246,23 +154,4 @@ async def chat(request: ChatRequest):
 
 @app.get("/documents")
 async def list_documents():
-    if not document_store:
-        raise HTTPException(status_code=503, detail="Document store not ready")
-    docs = document_store.filter_documents()
-    return {
-        "count": len(docs),
-        "documents": [
-            {"id": d.id, "title": d.meta.get("title"), "category": d.meta.get("category")}
-            for d in docs
-        ],
-    }
-
-
-@app.post("/documents/add")
-async def add_document(title: str, content: str, category: str = "general"):
-    """Add a new document to the knowledge base at runtime (no restart needed)."""
-    if not indexing_pipeline or not document_store:
-        raise HTTPException(status_code=503, detail="Pipeline not ready")
-    new_doc = Document(content=content, meta={"title": title, "category": category})
-    indexing_pipeline.run({"embedder": {"documents": [new_doc]}})
-    return {"status": "added", "document_count": document_store.count_documents(), "title": title}
+    return {"count": len(knowledge_docs), "documents": [{"id": d["id"], "title": d["title"], "category": d["category"]} for d in knowledge_docs]}

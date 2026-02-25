@@ -1,0 +1,27 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+ecosage-ui/node_modules
+ecosage-ui/.pnp
+ecosage-ui/.pnp.js
+
+# testing
+ecosage-ui/coverage
+
+# production
+ecosage-ui/build
+
+# misc
+ecosage-ui/.DS_Store
+ecosage-ui/.env.local
+ecosage-ui/.env.development.local
+ecosage-ui/.env.test.local
+ecosage-ui/.env.production.local
+
+ecosage-ui/npm-debug.log*
+ecosage-ui/yarn-debug.log*
+ecosage-ui/yarn-error.log*
+
+frontend/__pycache__
+frontend/.env
+frontend/.env.example

@@ -3,8 +3,8 @@ import { useState, useRef, useEffect } from "react";
 // ─── Config ────────────────────────────────────────────────────────────────
 // Change this to your backend URL when running locally
 const API_BASE = "http://localhost:8000";
-// Fallback: direct Claude API (used if backend is offline)
-const USE_FALLBACK = true;
+// Fallback disabled — Claude API is now called from the backend, not the browser
+const USE_FALLBACK = false;
 
 const SYSTEM_PROMPT = `You are EcoSage — a warm, knowledgeable sustainability advisor focused on environment, resources, and eco-living. Be practical, encouraging, and end every response with one small action the person can take today. Only discuss sustainability topics.`;
 
@@ -79,7 +79,7 @@ export default function EcoSage() {
 
     // Check backend health on mount
     useEffect(() => {
-        fetch(`${API_BASE}/health`, { signal: AbortSignal.timeout(3000) })
+        fetch(`${API_BASE}/health`, { signal: AbortSignal.timeout(10000) })
             .then((r) => r.json())
             .then((d) =>
                 setBackendStatus(d.status === "ok" ? "online" : "offline"),
@@ -369,7 +369,9 @@ export default function EcoSage() {
                                             }
                                         >
                                             📄 {msg.sources.length} source
-                                            {msg.sources.length > 1 ? "s" : ""}{" "}
+                                            {msg.sources.length > 1
+                                                ? "s"
+                                                : ""}{" "}
                                             retrieved
                                             {activeSources === i ? " ▲" : " ▼"}
                                         </button>
