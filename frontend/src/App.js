@@ -3,6 +3,7 @@ import "./App.css";
 
 // ─── Config ────────────────────────────────────────────────────────────────
 const REACT_APP_API_URL = process.env.REACT_APP_API_URL || "";
+console.log("API URL:", REACT_APP_API_URL); // check browser DevTools console
 
 const SUGGESTED_QUESTIONS = [
     "How can I reduce plastic at home?",
