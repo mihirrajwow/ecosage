@@ -7,8 +7,12 @@ import logging
 from contextlib import asynccontextmanager
 from typing import Optional
 
-from google import genai
-from google.genai import types
+try:
+    from google import genai  # type: ignore[import]
+    from google.genai import types  # type: ignore[import]
+except ImportError:
+    import genai  # type: ignore[import]
+    from genai import types  # type: ignore[import]
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -19,7 +23,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("ecosage")
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-LLM_MODEL      = os.getenv("LLM_MODEL", "gemini-2.0-flash")
+LLM_MODEL      = os.getenv("LLM_MODEL", "gemini-2.5-flash-lite")
 TOP_K_DOCS     = int(os.getenv("TOP_K_DOCS", "3"))
 
 SYSTEM_PROMPT = """You are EcoSage, a warm and knowledgeable sustainability advisor.
@@ -67,7 +71,7 @@ async def lifespan(app: FastAPI):
     global knowledge_docs, gemini_client
 
     if not GEMINI_API_KEY:
-        raise RuntimeError("GEMINI_API_KEY is not set in your .env file!")
+        raise RuntimeError("GEMINI_API_KEY is not set!")
 
     gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 
@@ -119,7 +123,6 @@ async def chat(request: ChatRequest):
         )
         context = f"Relevant knowledge base context:\n{context}\n\n"
 
-    # Build history for Gemini
     history = []
     for msg in request.history[-6:]:
         role = "user" if msg.role == "user" else "model"
