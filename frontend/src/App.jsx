@@ -1,9 +1,9 @@
 import { useState, useRef, useEffect } from "react";
 
 // ─── Config ────────────────────────────────────────────────────────────────
-// Change this to your backend URL when running locally
-const API_BASE = "http://localhost:8000";
-// Fallback disabled — Claude API is now called from the backend, not the browser
+// Uses REACT_APP_API_URL env var (set in Vercel dashboard) or falls back to localhost
+const API_BASE = process.env.REACT_APP_API_URL || "http://localhost:8000";
+// Fallback disabled — Gemini API is called from the backend, not the browser
 const USE_FALLBACK = false;
 
 const SYSTEM_PROMPT = `You are EcoSage — a warm, knowledgeable sustainability advisor focused on environment, resources, and eco-living. Be practical, encouraging, and end every response with one small action the person can take today. Only discuss sustainability topics.`;
@@ -263,25 +263,25 @@ export default function EcoSage() {
                         <div style={s.pipelineStep}>
                             <span style={s.stepNum}>1</span>
                             <span style={s.stepText}>
-                                SentenceTransformers embed query
+                                Keyword matching on query
                             </span>
                         </div>
                         <div style={s.pipelineStep}>
                             <span style={s.stepNum}>2</span>
                             <span style={s.stepText}>
-                                InMemoryDocumentStore retrieves top-4
+                                Top-3 docs retrieved from knowledge base
                             </span>
                         </div>
                         <div style={s.pipelineStep}>
                             <span style={s.stepNum}>3</span>
                             <span style={s.stepText}>
-                                PromptBuilder injects context
+                                Context injected into prompt
                             </span>
                         </div>
                         <div style={s.pipelineStep}>
                             <span style={s.stepNum}>4</span>
                             <span style={s.stepText}>
-                                Claude generates grounded answer
+                                Gemini generates grounded answer
                             </span>
                         </div>
                     </div>
@@ -315,10 +315,10 @@ export default function EcoSage() {
                         </div>
                         <div style={s.stackBadges}>
                             {[
-                                "Haystack 2.x",
-                                "SentenceTransformers",
+                                "Keyword RAG",
                                 "FastAPI",
-                                "Claude",
+                                "Gemini",
+                                "React",
                             ].map((b) => (
                                 <span key={b} style={s.stackBadge}>
                                     {b}
@@ -524,9 +524,9 @@ export default function EcoSage() {
                     </div>
                     <p style={s.footer}>
                         {backendStatus === "online"
-                            ? "🌿 Haystack RAG · SentenceTransformers · FastAPI · Claude"
-                            : "🌿 Claude Direct · Start backend for full RAG mode"}{" "}
-                        · All free & open source
+                            ? "🌿 Keyword RAG · FastAPI · Gemini 2.5 Flash Lite · React"
+                            : "🌿 Backend offline · Start Render service for full RAG mode"}{" "}
+                        · Open Source
                     </p>
                 </div>
             </div>
