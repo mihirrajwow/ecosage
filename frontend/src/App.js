@@ -403,7 +403,7 @@ export default function App() {
                     </div>
 
                     <p className="footer">
-                        🌿 100% local · No API key · Ollama + Haystack + FastAPI
+                        🌿 100% local · No API key in local (api for demo only) · Ollama + Haystack + FastAPI
                         + React
                     </p>
                 </div>
