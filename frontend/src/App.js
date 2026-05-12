@@ -172,7 +172,7 @@ export default function App() {
         try {
             if (backendStatus !== "online")
                 throw new Error(
-                    "Backend is offline. Make sure uvicorn is running on port 8000.",
+                    "Backend is offline. Make sure uvicorn is running on render.",
                 );
 
             const res = await fetch(`${REACT_APP_API_URL}/chat`, {
@@ -277,7 +277,7 @@ export default function App() {
                         <p className="status-desc">
                             {backendStatus === "online"
                                 ? "Haystack pipeline active — answers grounded in knowledge base"
-                                : "Run: cd backend && uvicorn app:app --port 8000"}
+                                : "Backend offline — check your API server"}
                         </p>
                     </div>
 
